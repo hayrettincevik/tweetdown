@@ -1,0 +1,10 @@
+.venv/
+__pycache__/
+*.pyc
+.tweetdown/
+x_likes_*.json
+dist/
+build/
+*.spec
+*.rar
+tez1/

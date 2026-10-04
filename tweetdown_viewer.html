@@ -1,0 +1,317 @@
+<!doctype html>
+<html lang="tr">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1">
+<title>TweetDown Görüntüleyici</title>
+<style>
+  :root{
+    --bg:#f5f7fa; --panel:#ffffff; --panel-2:#f0f3f7; --text:#15202b; --muted:#5b7083;
+    --border:#e1e8ed; --accent:#1d9bf0; --accent-weak:#e8f5fe; --shadow:0 1px 3px rgba(0,0,0,.06);
+    --like:#f91880; --rt:#00ba7c;
+  }
+  @media (prefers-color-scheme: dark){
+    :root:not([data-theme="light"]){
+      --bg:#15202b; --panel:#1e2732; --panel-2:#273340; --text:#e7e9ea; --muted:#8b98a5;
+      --border:#38444d; --accent:#1d9bf0; --accent-weak:#13293a; --shadow:0 1px 3px rgba(0,0,0,.3);
+    }
+  }
+  :root[data-theme="dark"]{
+    --bg:#15202b; --panel:#1e2732; --panel-2:#273340; --text:#e7e9ea; --muted:#8b98a5;
+    --border:#38444d; --accent:#1d9bf0; --accent-weak:#13293a; --shadow:0 1px 3px rgba(0,0,0,.3);
+  }
+  *{box-sizing:border-box}
+  body{margin:0;background:var(--bg);color:var(--text);
+    font-family:-apple-system,BlinkMacSystemFont,"Segoe UI",Roboto,Helvetica,Arial,sans-serif;
+    font-size:15px;line-height:1.4}
+  a{color:var(--accent);text-decoration:none}
+  a:hover{text-decoration:underline}
+
+  header{position:sticky;top:0;z-index:10;background:var(--panel);border-bottom:1px solid var(--border);
+    box-shadow:var(--shadow)}
+  .bar{max-width:1200px;margin:0 auto;padding:10px 16px;display:flex;gap:12px;align-items:center;flex-wrap:wrap}
+  .brand{font-weight:800;font-size:18px;display:flex;align-items:center;gap:8px;white-space:nowrap}
+  .brand .dot{width:10px;height:10px;border-radius:50%;background:var(--accent)}
+  .grow{flex:1 1 220px}
+  input[type=search],select{width:100%;padding:9px 12px;border:1px solid var(--border);border-radius:10px;
+    background:var(--panel-2);color:var(--text);font-size:14px;outline:none}
+  input[type=search]:focus,select:focus{border-color:var(--accent)}
+  select{width:auto}
+  .controls{display:flex;gap:8px;align-items:center;flex-wrap:wrap}
+  .btn{padding:8px 12px;border:1px solid var(--border);border-radius:10px;background:var(--panel-2);
+    color:var(--text);cursor:pointer;font-size:14px}
+  .btn:hover{border-color:var(--accent)}
+  .chk{display:flex;align-items:center;gap:6px;color:var(--muted);font-size:14px;cursor:pointer;user-select:none}
+  .stats{max-width:1200px;margin:0 auto;padding:0 16px 8px;color:var(--muted);font-size:13px}
+
+  main{max-width:1200px;margin:0 auto;padding:16px}
+  #drop{border:2px dashed var(--border);border-radius:16px;padding:48px 24px;text-align:center;color:var(--muted);
+    background:var(--panel);transition:.15s}
+  #drop.drag{border-color:var(--accent);background:var(--accent-weak);color:var(--text)}
+  #drop h2{margin:0 0 6px;color:var(--text)}
+  #pick{display:inline-block;margin-top:14px}
+
+  .grid{display:grid;grid-template-columns:repeat(auto-fill,minmax(320px,1fr));gap:14px}
+  .card{background:var(--panel);border:1px solid var(--border);border-radius:14px;padding:14px;
+    box-shadow:var(--shadow);display:flex;flex-direction:column;gap:10px;overflow:hidden}
+  .head{display:flex;gap:10px;align-items:flex-start}
+  .avatar{width:44px;height:44px;border-radius:50%;flex:0 0 auto;background:var(--panel-2);object-fit:cover}
+  .who{min-width:0;flex:1}
+  .name{font-weight:700;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .handle{color:var(--muted);font-size:13px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+  .date{color:var(--muted);font-size:12px;white-space:nowrap;margin-left:auto;flex:0 0 auto}
+  .text{white-space:pre-wrap;word-wrap:break-word;overflow-wrap:anywhere}
+  .media{display:grid;gap:6px;border-radius:12px;overflow:hidden}
+  .media.m1{grid-template-columns:1fr}
+  .media.m2{grid-template-columns:1fr 1fr}
+  .media.m3,.media.m4{grid-template-columns:1fr 1fr}
+  .media img,.media video{width:100%;height:100%;max-height:360px;object-fit:cover;background:var(--panel-2);
+    border:1px solid var(--border);border-radius:10px;display:block}
+  .media.m1 img,.media.m1 video{max-height:460px;object-fit:contain}
+  .foot{display:flex;gap:16px;align-items:center;color:var(--muted);font-size:13px;margin-top:auto;
+    padding-top:4px;border-top:1px solid var(--border)}
+  .foot .sp{flex:1}
+  .metric{display:inline-flex;align-items:center;gap:5px}
+  .metric.like{color:var(--like)}
+  .metric.rt{color:var(--rt)}
+  #sentinel{height:1px}
+  .end{text-align:center;color:var(--muted);padding:24px;font-size:13px}
+  .hidden{display:none !important}
+  .empty{text-align:center;color:var(--muted);padding:48px}
+</style>
+</head>
+<body>
+<header>
+  <div class="bar">
+    <div class="brand"><span class="dot"></span>TweetDown</div>
+    <div class="grow"><input id="q" type="search" placeholder="Metin veya kullanıcı ara…" disabled></div>
+    <div class="controls">
+      <select id="sort" disabled>
+        <option value="orig">Sıra: İndirildiği gibi</option>
+        <option value="new">En yeni</option>
+        <option value="old">En eski</option>
+        <option value="likes">En çok beğeni</option>
+        <option value="rts">En çok retweet</option>
+      </select>
+      <label class="chk"><input type="checkbox" id="onlyMedia" disabled> Sadece medya</label>
+      <button class="btn" id="load">JSON seç</button>
+      <button class="btn" id="theme" title="Tema değiştir">🌓</button>
+    </div>
+  </div>
+  <div class="stats" id="stats"></div>
+</header>
+
+<main>
+  <div id="drop">
+    <h2>Beğeni JSON dosyasını açın</h2>
+    <div>Dosyayı buraya sürükleyip bırakın ya da seçin — <code>x_likes_*.json</code></div>
+    <label class="btn" id="pick">Dosya seç<input id="file" type="file" accept=".json,application/json" hidden></label>
+    <div style="margin-top:10px;font-size:12px">Veriler tamamen tarayıcınızda işlenir; hiçbir yere gönderilmez.</div>
+  </div>
+
+  <div id="grid" class="grid"></div>
+  <div id="empty" class="empty hidden">Eşleşen beğeni yok.</div>
+  <div id="sentinel"></div>
+  <div id="end" class="end hidden"></div>
+</main>
+
+<script>
+(function(){
+  "use strict";
+  var ALL = [];          // all tweets
+  var VIEW = [];         // filtered+sorted
+  var shown = 0;
+  var BATCH = 60;
+  var els = {
+    q: document.getElementById('q'),
+    sort: document.getElementById('sort'),
+    onlyMedia: document.getElementById('onlyMedia'),
+    grid: document.getElementById('grid'),
+    drop: document.getElementById('drop'),
+    file: document.getElementById('file'),
+    stats: document.getElementById('stats'),
+    empty: document.getElementById('empty'),
+    end: document.getElementById('end'),
+    sentinel: document.getElementById('sentinel')
+  };
+
+  // ---- theme toggle ----
+  document.getElementById('theme').addEventListener('click', function(){
+    var cur = document.documentElement.getAttribute('data-theme');
+    var dark = cur ? cur === 'dark'
+      : window.matchMedia('(prefers-color-scheme: dark)').matches;
+    document.documentElement.setAttribute('data-theme', dark ? 'light' : 'dark');
+  });
+
+  // ---- helpers ----
+  function esc(s){ return (s||'').replace(/[&<>"']/g, function(c){
+    return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]; }); }
+
+  function linkify(text){
+    var out = esc(text);
+    out = out.replace(/(https?:\/\/[^\s]+)/g, function(u){
+      var clean = u.replace(/[.,)]+$/,'');
+      return '<a href="'+clean+'" target="_blank" rel="noopener">'+clean+'</a>';
+    });
+    out = out.replace(/(^|[^\w@])@(\w{1,15})/g, function(m,p,h){
+      return p+'<a href="https://x.com/'+h+'" target="_blank" rel="noopener">@'+h+'</a>'; });
+    out = out.replace(/(^|[^&\w])#(\w+)/g, function(m,p,h){
+      return p+'<a href="https://x.com/hashtag/'+h+'" target="_blank" rel="noopener">#'+h+'</a>'; });
+    return out;
+  }
+
+  function fmtNum(n){
+    if(n==null) return '0';
+    if(n>=1e6) return (n/1e6).toFixed(n>=1e7?0:1)+'M';
+    if(n>=1e3) return (n/1e3).toFixed(n>=1e4?0:1)+'K';
+    return ''+n;
+  }
+  function fmtDate(s){
+    if(!s) return '';
+    var d = new Date(s);
+    if(isNaN(d)) return '';
+    return d.toLocaleDateString('tr-TR',{year:'numeric',month:'short',day:'numeric'});
+  }
+  function ts(s){ var d=new Date(s); return isNaN(d)?0:d.getTime(); }
+  function isVideo(u){ return /\.mp4(\?|$)/i.test(u) || /video\.twimg\.com/i.test(u); }
+
+  function card(t){
+    var a = t.author||{};
+    var c = t.counts||{};
+    var media = (t.media_urls||[]);
+    var avatar = (a.avatar_url||'').replace('_normal','_bigger');
+    var mediaHtml = '';
+    if(media.length){
+      var cls = 'm'+Math.min(media.length,4);
+      mediaHtml = '<div class="media '+cls+'">'+ media.map(function(u){
+        if(isVideo(u)) return '<video controls preload="none" src="'+esc(u)+'"></video>';
+        return '<a href="'+esc(u)+'" target="_blank" rel="noopener"><img loading="lazy" decoding="async" src="'+esc(u)+'" alt=""></a>';
+      }).join('') +'</div>';
+    }
+    var el = document.createElement('article');
+    el.className = 'card';
+    el.innerHTML =
+      '<div class="head">'+
+        (avatar?'<img class="avatar" loading="lazy" src="'+esc(avatar)+'" alt="">':'<div class="avatar"></div>')+
+        '<div class="who">'+
+          '<div class="name">'+esc(a.name||'')+'</div>'+
+          '<div class="handle">'+(a.username?('@'+esc(a.username)):'')+'</div>'+
+        '</div>'+
+        '<div class="date">'+fmtDate(t.created_at)+'</div>'+
+      '</div>'+
+      (t.text?('<div class="text">'+linkify(t.text)+'</div>'):'')+
+      mediaHtml+
+      '<div class="foot">'+
+        '<span class="metric like">❤ '+fmtNum(c.likes)+'</span>'+
+        '<span class="metric rt">🔁 '+fmtNum(c.retweets)+'</span>'+
+        '<span class="metric">💬 '+fmtNum(c.replies)+'</span>'+
+        '<span class="sp"></span>'+
+        (t.url?'<a href="'+esc(t.url)+'" target="_blank" rel="noopener">X\'te aç ↗</a>':'')+
+      '</div>';
+    return el;
+  }
+
+  function applyFilters(){
+    var term = els.q.value.trim().toLowerCase();
+    var onlyM = els.onlyMedia.checked;
+    VIEW = ALL.filter(function(t){
+      if(onlyM && !(t.media_urls && t.media_urls.length)) return false;
+      if(!term) return true;
+      var a = t.author||{};
+      return (t.text||'').toLowerCase().indexOf(term)>=0
+        || (a.username||'').toLowerCase().indexOf(term)>=0
+        || (a.name||'').toLowerCase().indexOf(term)>=0;
+    });
+    var s = els.sort.value;
+    if(s==='new') VIEW.sort(function(a,b){return ts(b.created_at)-ts(a.created_at);});
+    else if(s==='old') VIEW.sort(function(a,b){return ts(a.created_at)-ts(b.created_at);});
+    else if(s==='likes') VIEW.sort(function(a,b){return (b.counts&&b.counts.likes||0)-(a.counts&&a.counts.likes||0);});
+    else if(s==='rts') VIEW.sort(function(a,b){return (b.counts&&b.counts.retweets||0)-(a.counts&&a.counts.retweets||0);});
+    render(true);
+  }
+
+  function render(reset){
+    if(reset){ els.grid.innerHTML=''; shown=0; }
+    var frag = document.createDocumentFragment();
+    var next = Math.min(shown+BATCH, VIEW.length);
+    for(var i=shown;i<next;i++) frag.appendChild(card(VIEW[i]));
+    els.grid.appendChild(frag);
+    shown = next;
+    els.empty.classList.toggle('hidden', VIEW.length>0);
+    var done = shown>=VIEW.length;
+    els.end.classList.toggle('hidden', !done || VIEW.length===0);
+    if(done && VIEW.length) els.end.textContent = VIEW.length+' beğeninin tümü gösterildi.';
+    updateStats();
+    // Auto-fill when the page is not yet tall enough to scroll (small result sets).
+    if(shown<VIEW.length && document.documentElement.scrollHeight <= window.innerHeight+10){
+      requestAnimationFrame(function(){ render(false); });
+    }
+  }
+
+  function updateStats(){
+    els.stats.textContent = 'Toplam '+ALL.length.toLocaleString('tr-TR')+
+      ' beğeni · '+VIEW.length.toLocaleString('tr-TR')+' eşleşme · '+
+      shown.toLocaleString('tr-TR')+' gösteriliyor';
+  }
+
+  var io = new IntersectionObserver(function(entries){
+    if(entries[0].isIntersecting && shown<VIEW.length) render(false);
+  }, {rootMargin:'800px'});
+  io.observe(els.sentinel);
+
+  // Scroll/resize fallback in case IntersectionObserver does not fire.
+  function nearBottom(){
+    return (window.innerHeight + window.scrollY) >= (document.documentElement.scrollHeight - 800);
+  }
+  function maybeMore(){ if(shown<VIEW.length && nearBottom()) render(false); }
+  window.addEventListener('scroll', maybeMore, {passive:true});
+  window.addEventListener('resize', maybeMore);
+
+  function load(data){
+    var tweets = (data && data.tweets) || (Array.isArray(data)?data:[]);
+    if(!tweets.length){ alert('Bu dosyada beğeni bulunamadı.'); return; }
+    ALL = tweets;
+    els.drop.classList.add('hidden');
+    [els.q,els.sort,els.onlyMedia].forEach(function(e){e.disabled=false;});
+    applyFilters();
+  }
+
+  function readFile(f){
+    if(!f) return;
+    var r = new FileReader();
+    r.onload = function(){
+      try{ load(JSON.parse(r.result)); }
+      catch(e){ alert('JSON okunamadı: '+e.message); }
+    };
+    r.onerror = function(){ alert('Dosya okunamadı.'); };
+    r.readAsText(f);
+  }
+
+  // ---- wire up inputs ----
+  els.q.addEventListener('input', debounce(applyFilters,180));
+  els.sort.addEventListener('change', applyFilters);
+  els.onlyMedia.addEventListener('change', applyFilters);
+  els.file.addEventListener('change', function(){ readFile(this.files[0]); });
+  document.getElementById('load').addEventListener('click', function(){ els.file.click(); });
+
+  ['dragenter','dragover'].forEach(function(ev){
+    els.drop.addEventListener(ev,function(e){e.preventDefault();els.drop.classList.add('drag');}); });
+  ['dragleave','drop'].forEach(function(ev){
+    els.drop.addEventListener(ev,function(e){e.preventDefault();els.drop.classList.remove('drag');}); });
+  els.drop.addEventListener('drop', function(e){ readFile(e.dataTransfer.files[0]); });
+
+  function debounce(fn,ms){var t;return function(){clearTimeout(t);t=setTimeout(fn,ms);};}
+
+  // ---- auto-load when served over http (TweetDown opens it this way) ----
+  // The app serves the chosen export at /data.json; a double-clicked file://
+  // copy skips this and just shows the picker.
+  if(location.protocol==='http:'||location.protocol==='https:'){
+    var src = new URLSearchParams(location.search).get('data') || 'data.json';
+    fetch(src).then(function(r){ if(!r.ok) throw new Error('yok'); return r.json(); })
+      .then(function(d){ load(d); })
+      .catch(function(){ /* sunucu yoksa dosya seçici görünür kalır */ });
+  }
+})();
+</script>
+</body>
+</html>

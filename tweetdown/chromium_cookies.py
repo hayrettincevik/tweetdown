@@ -8,6 +8,8 @@ import tempfile
 from dataclasses import dataclass
 from pathlib import Path
 
+from .i18n import t
+
 
 @dataclass(slots=True)
 class ChromiumProfile:
@@ -20,7 +22,7 @@ class ChromiumProfile:
 def _local_app_data() -> Path:
     raw = os.environ.get("LOCALAPPDATA")
     if not raw:
-        raise RuntimeError("LOCALAPPDATA bulunamadı.")
+        raise RuntimeError(t("cc_no_localappdata"))
     return Path(raw)
 
 
@@ -66,7 +68,7 @@ def _master_key(user_data_dir: Path) -> bytes:
     try:
         import win32crypt
     except ImportError as exc:
-        raise RuntimeError("pywin32 kurulu değil; requirements.txt kurulumu gerekli.") from exc
+        raise RuntimeError(t("cc_pywin32_missing")) from exc
 
     local_state = json.loads((user_data_dir / "Local State").read_text(encoding="utf-8"))
     encrypted_key = base64.b64decode(local_state["os_crypt"]["encrypted_key"])
@@ -79,7 +81,7 @@ def _decrypt_value(encrypted: bytes, key: bytes) -> str:
     try:
         import win32crypt
     except ImportError as exc:
-        raise RuntimeError("pywin32 kurulu değil; requirements.txt kurulumu gerekli.") from exc
+        raise RuntimeError(t("cc_pywin32_missing")) from exc
 
     if not encrypted:
         return ""
@@ -150,8 +152,7 @@ def extract_x_cookies(browser_id: str | None = None) -> tuple[dict[str, str], Ch
     detail = "; ".join(errors[-4:])
     if checked_profiles:
         raise RuntimeError(
-            "Chromium profilleri okundu ama x.com giriş cookie'leri bulunamadı. "
-            "Açık x.com sekmesinin doğru Chrome profilinde olduğundan emin olun."
-            + (f" Son hatalar: {detail}" if detail else "")
+            t("cc_no_cookies_profile")
+            + (t("au_last_errors", detail=detail) if detail else "")
         )
-    raise RuntimeError("Chromium cookie okunamadı." + (f" Son hatalar: {detail}" if detail else ""))
+    raise RuntimeError(t("cc_no_cookies") + (t("au_last_errors", detail=detail) if detail else ""))

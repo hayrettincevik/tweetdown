@@ -9,6 +9,7 @@ from pathlib import Path
 from typing import Any
 from urllib.parse import urlencode
 
+from .i18n import t
 from .models import AuthBundle, TweetRecord
 from .query_ids import load_query_ids, refresh_query_ids
 from .state import BASE_DIR, clear_state, load_state, save_state
@@ -39,7 +40,7 @@ class MissingVariablesError(XRequestError):
 
     def __init__(self, names: list[str]) -> None:
         self.names = names
-        super().__init__("Eksik GraphQL değişkenleri: " + ", ".join(names))
+        super().__init__(t("cl_missing_vars", names=", ".join(names)))
 
 
 def _missing_variables(errors: Any) -> list[str]:
@@ -311,25 +312,25 @@ async def _fetch_page(
         # Some X installations still answer under api.twitter.com.
         response = await client.get(url.replace(API_BASE_URL, LEGACY_API_BASE_URL), headers=_headers(auth))
     if response.status_code in (401, 403):
-        raise XRequestError("X oturumu reddetti. Cookie/login bilgileri geçersiz veya süresi dolmuş.")
+        raise XRequestError(t("cl_err_rejected"))
     if response.status_code == 429:
         reset = response.headers.get("x-rate-limit-reset")
-        detail = f" Rate limit reset: {reset}" if reset else ""
-        raise XRequestError("X rate limit verdi. Bir süre sonra kaldığınız yerden devam edin." + detail)
+        detail = t("cl_err_ratelimit_reset", reset=reset) if reset else ""
+        raise XRequestError(t("cl_err_ratelimit") + detail)
     if response.status_code == 404:
-        raise XRequestError("Likes GraphQL query id eskimiş görünüyor.")
+        raise XRequestError(t("cl_err_qid_stale"))
     if response.status_code == 422:
         # Missing/invalid GraphQL variable: let the caller inject it and retry.
         _raise_for_missing_variables(response)
     if response.status_code >= 400:
-        raise XRequestError(f"X HTTP {response.status_code}: {response.text[:240]}")
+        raise XRequestError(t("cl_err_http", status=response.status_code, text=response.text[:240]))
     payload = response.json()
     if isinstance(payload, dict) and payload.get("errors") and not payload.get("data"):
         missing = _missing_variables(payload["errors"])
         if missing:
             raise MissingVariablesError(missing)
         message = "; ".join(error.get("message", "?") for error in payload["errors"])
-        raise XRequestError(f"X GraphQL hatası: {message}")
+        raise XRequestError(t("cl_err_graphql", message=message))
     tweets, next_cursor = parse_likes_page(payload)
     return response, payload, tweets, next_cursor
 
@@ -348,7 +349,7 @@ async def export_likes_async(
     try:
         import httpx
     except ImportError as exc:
-        raise XRequestError("httpx kurulu değil. Önce `python -m pip install -r requirements.txt` çalıştırın.") from exc
+        raise XRequestError(t("cl_err_httpx")) from exc
 
     def log(message: str) -> None:
         if progress:
@@ -356,7 +357,7 @@ async def export_likes_async(
 
     query_ids = load_query_ids()
     if "Likes" not in query_ids:
-        log("X query id keşfediliyor...")
+        log(t("cl_discover_qid"))
         query_ids.update(await refresh_query_ids(("Likes",)))
     query_id = query_ids["Likes"]
 
@@ -369,12 +370,12 @@ async def export_likes_async(
     pages_this_run = 0
     finished = False
     extra_vars: dict[str, Any] = {}
-    log("Kaldığı yerden devam ediliyor..." if cursor else "Beğeniler baştan okunuyor...")
+    log(t("cl_resuming") if cursor else t("cl_reading_fresh"))
 
     async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
         while True:
             if should_stop and should_stop():
-                raise ExportStopped("İndirme durduruldu. Daha sonra devam edebilirsiniz.")
+                raise ExportStopped(t("cl_stopped"))
             if max_pages is not None and pages_this_run >= max_pages:
                 break
 
@@ -394,20 +395,17 @@ async def export_likes_async(
                         extra_vars[name] = False
                     if not added:
                         raise
-                    log("X ek değişken istedi, ekleniyor: " + ", ".join(added))
+                    log(t("cl_extra_var", names=", ".join(added)))
                     continue
                 except XRequestError as exc:
                     if "query id" in str(exc).lower() and not refreshed_qid:
                         refreshed_qid = True
-                        log("Query id yenileniyor...")
+                        log(t("cl_qid_refresh"))
                         query_id = (await refresh_query_ids(("Likes",)))["Likes"]
                         continue
                     raise
             else:
-                raise XRequestError(
-                    "İstek, otomatik düzeltmelere rağmen başarısız oldu. "
-                    "X API'si beklenmedik bir yanıt veriyor olabilir."
-                )
+                raise XRequestError(t("cl_failed_auto"))
 
             fresh = [tweet for tweet in tweets if tweet.tweet_id not in seen_ids]
             for tweet in fresh:
@@ -436,7 +434,7 @@ async def export_likes_async(
                     "updated_at": datetime.now(timezone.utc).isoformat(),
                 }
             )
-            log(f"Sayfa {pages_done}: {len(fresh)} yeni beğeni, toplam {len(existing)}")
+            log(t("cl_page_progress", page=pages_done, fresh=len(fresh), total=len(existing)))
             if not next_cursor or not tweets or not fresh:
                 finished = True
                 break
@@ -462,8 +460,8 @@ async def export_likes_async(
         clear_state()
     else:
         # Stopped by max_pages: keep the cursor so the next run can resume.
-        log("Max sayfa sınırına ulaşıldı; ilerleme saklandı, kaldığı yerden devam edebilirsiniz.")
-    log(f"JSON kaydedildi: {output_path}")
+        log(t("cl_maxpages_saved"))
+    log(t("cl_json_saved", path=output_path))
     return payload
 
 

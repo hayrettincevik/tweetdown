@@ -10,6 +10,7 @@ import tempfile
 from pathlib import Path
 from typing import Any
 
+from .i18n import t
 from .models import AuthBundle
 from .state import APP_DIR, SESSION_PATH, ensure_app_dir, load_json, save_json
 
@@ -125,13 +126,13 @@ def from_manual(auth_token: str, ct0: str, user_id: str) -> AuthBundle:
     ct0 = ct0.strip()
     user_id = user_id.strip()
     if not auth_token or not ct0:
-        raise AuthError("auth_token ve ct0 gerekli.")
+        raise AuthError(t("au_token_required"))
     if not user_id:
         user_id = resolve_user_id_from_session(auth_token, ct0) or ""
     if not user_id:
-        raise AuthError("Numeric user id gerekli. Oturumdan otomatik çözülemedi.")
+        raise AuthError(t("au_user_id_needed"))
     if not user_id.isdigit():
-        raise AuthError("User id numeric olmalı.")
+        raise AuthError(t("au_user_id_numeric"))
     bundle = AuthBundle(auth_token, ct0, user_id, "manual")
     save_session(bundle)
     return bundle
@@ -156,9 +157,9 @@ def from_webview_login(timeout: float = 660.0) -> AuthBundle:
         try:
             subprocess.run(_login_child_command(str(tmp_path)), timeout=timeout)
         except FileNotFoundError as exc:
-            raise AuthError("Oturum açma penceresi başlatılamadı.") from exc
+            raise AuthError(t("au_login_start_fail")) from exc
         except subprocess.TimeoutExpired as exc:
-            raise AuthError("Oturum açma zaman aşımına uğradı. Lütfen tekrar deneyin.") from exc
+            raise AuthError(t("au_login_timeout")) from exc
         try:
             data = json.loads(tmp_path.read_text(encoding="utf-8"))
         except (FileNotFoundError, json.JSONDecodeError):
@@ -172,13 +173,10 @@ def from_webview_login(timeout: float = 660.0) -> AuthBundle:
     auth_token = data.get("auth_token")
     ct0 = data.get("ct0")
     if not auth_token or not ct0:
-        raise AuthError(
-            "Giriş tamamlanmadı. Açılan pencerede X'e giriş yapın; "
-            "giriş başarılı olunca pencere kendiliğinden kapanır."
-        )
+        raise AuthError(t("au_login_incomplete"))
     user_id = _extract_user_id_from_twid(data.get("twid")) or resolve_user_id_from_session(auth_token, ct0)
     if not user_id:
-        raise AuthError("Giriş başarılı ama numeric user id çözülemedi. User id alanını elle girin.")
+        raise AuthError(t("au_login_no_userid"))
     bundle = AuthBundle(auth_token, ct0, str(user_id), "webview-login")
     save_session(bundle)
     return bundle
@@ -207,26 +205,21 @@ def from_browser(browser_name: str | None = None) -> AuthBundle:
                 save_session(bundle)
                 return bundle
             if auth_token and ct0:
-                raise AuthError(
-                    "auth_token ve ct0 okundu ama numeric user id için twid bulunamadı. "
-                    "User id alanını manuel girip auth_token/ct0 değerlerini manuel kaydedin."
-                )
+                raise AuthError(t("au_browser_no_twid"))
         except AuthError:
             raise
         except Exception as exc:
             chromium_error = exc
             if browser_name != "auto":
                 raise AuthError(
-                    "Tarayıcıdan auth_token, ct0 ve twid bulunamadı. "
-                    "x.com sekmesinin seçili Chrome profilinde açık olduğundan emin olun. "
-                    f"Detay: {exc}"
+                    t("au_browser_not_found_profile") + t("au_detail_suffix", detail=exc)
                 ) from exc
             # In auto mode fall through to browser_cookie3, which also covers Firefox.
 
     try:
         import browser_cookie3
     except ImportError as exc:
-        raise AuthError("browser-cookie3 kurulu değil. requirements.txt kurulumunu yapın.") from exc
+        raise AuthError(t("au_bc3_missing")) from exc
 
     loaders = []
     if browser_name in ("auto", "chrome"):
@@ -261,13 +254,11 @@ def from_browser(browser_name: str | None = None) -> AuthBundle:
             return bundle
 
     detail = "; ".join(errors[-3:])
-    chromium_detail = f" Chromium okuyucu: {chromium_error}" if chromium_error else ""
+    chromium_detail = t("au_chromium_reader", detail=chromium_error) if chromium_error else ""
     raise AuthError(
-        "Tarayıcıdan auth_token, ct0 ve twid bulunamadı. x.com'da giriş yaptığınızdan emin olun. "
-        "Olmazsa DevTools > Network içinden tam Cookie header'ını kopyalayıp uygulamadaki "
-        "Cookie Header alanına yapıştırın."
+        t("au_browser_not_found_hint")
         + chromium_detail
-        + (f" Son hatalar: {detail}" if detail else "")
+        + (t("au_last_errors", detail=detail) if detail else "")
     )
 
 
@@ -275,7 +266,7 @@ async def _login_with_twikit(username: str, password: str, email: str | None) ->
     try:
         from twikit import Client
     except ImportError as exc:
-        raise AuthError("twikit kurulu değil. requirements.txt kurulumunu yapın.") from exc
+        raise AuthError(t("au_twikit_missing")) from exc
 
     client = Client("en-US")
     ensure_app_dir()
@@ -291,21 +282,18 @@ async def _login_with_twikit(username: str, password: str, email: str | None) ->
     ct0 = cookies.get("ct0")
     user_id = _extract_user_id_from_twid(cookies.get("twid"))
     if not auth_token or not ct0 or not user_id:
-        raise AuthError("Giriş başarılı görünse de gerekli cookie değerleri alınamadı.")
+        raise AuthError(t("au_login_cookies_missing"))
     return AuthBundle(auth_token, ct0, user_id, "twikit-login")
 
 
 def from_username_password(username: str, password: str, email: str | None = None) -> AuthBundle:
     if not username.strip() or not password:
-        raise AuthError("Kullanıcı adı ve şifre gerekli.")
+        raise AuthError(t("au_user_pass_needed"))
     try:
         bundle = asyncio.run(_login_with_twikit(username.strip(), password, email.strip() if email else None))
     except AuthError:
         raise
     except Exception as exc:
-        raise AuthError(
-            "X login başarısız oldu. Captcha, 2FA veya güvenlik kontrolü çıkmış olabilir. "
-            "Tarayıcı cookie yöntemiyle devam etmeyi deneyin."
-        ) from exc
+        raise AuthError(t("au_login_failed")) from exc
     save_session(bundle)
     return bundle

@@ -18,6 +18,8 @@ import threading
 import time
 from typing import Any
 
+from .i18n import t
+
 
 LOGIN_URL = "https://x.com/login"
 REQUIRED_COOKIES = ("auth_token", "ct0")
@@ -55,7 +57,7 @@ def run(outfile: str) -> None:
     closed = threading.Event()
 
     window = webview.create_window(
-        "TweetDown - X'te Oturum Aç",
+        t("webview_window_title"),
         LOGIN_URL,
         width=520,
         height=760,

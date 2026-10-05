@@ -4,6 +4,7 @@ import json
 import re
 from typing import Any
 
+from .i18n import t
 from .state import QUERY_ID_PATH, load_json, save_json
 
 
@@ -53,7 +54,7 @@ async def refresh_query_ids(operations: tuple[str, ...] = ("Likes",)) -> dict[st
     try:
         import httpx
     except ImportError as exc:
-        raise QueryIdError("httpx kurulu değil. Önce `python -m pip install -r requirements.txt` çalıştırın.") from exc
+        raise QueryIdError(t("qi_httpx_missing")) from exc
 
     found: dict[str, str] = {}
     queue: list[str] = []
@@ -83,7 +84,7 @@ async def refresh_query_ids(operations: tuple[str, ...] = ("Likes",)) -> dict[st
     save_json(QUERY_ID_PATH, merged)
     missing = [operation for operation in operations if operation not in merged]
     if missing:
-        raise QueryIdError(f"Query id bulunamadı: {', '.join(missing)}")
+        raise QueryIdError(t("qi_not_found", names=", ".join(missing)))
     return {operation: merged[operation] for operation in operations}
 
 

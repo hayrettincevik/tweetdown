@@ -6,7 +6,7 @@ import sys
 import threading
 import tkinter as tk
 from pathlib import Path
-from tkinter import filedialog, messagebox, ttk
+from tkinter import filedialog, messagebox, simpledialog, ttk
 from typing import Any
 
 from . import i18n
@@ -20,7 +20,7 @@ from .auth import (
     from_webview_login,
     load_session,
 )
-from .client import ExportStopped, XRequestError, default_output_path, export_likes
+from .client import ExportStopped, XRequestError, default_output_path, export_likes, unlike_all
 from .models import AuthBundle
 
 
@@ -97,7 +97,9 @@ class TweetDownApp(tk.Tk):
         root = ttk.Frame(self, padding=16)
         root.pack(fill=tk.BOTH, expand=True)
         root.columnconfigure(0, weight=1)
-        root.rowconfigure(3, weight=1)
+        root.rowconfigure(4, weight=1)
+
+        ttk.Style(self).configure("Danger.TButton", foreground="#c0182b")
 
         header = ttk.Frame(root)
         header.grid(row=0, column=0, sticky="ew")
@@ -200,8 +202,19 @@ class TweetDownApp(tk.Tk):
             row=3, column=0, columnspan=3, sticky="w", pady=(12, 0)
         )
 
+        danger_frame = self._reg(ttk.LabelFrame(root, padding=12), "frame_danger")
+        danger_frame.grid(row=3, column=0, sticky="ew", pady=8)
+        danger_frame.columnconfigure(0, weight=1)
+        self._reg(
+            ttk.Button(danger_frame, command=self._unlike_all, style="Danger.TButton"),
+            "btn_unlike_all",
+        ).grid(row=0, column=0, sticky="w")
+        self._reg(ttk.Label(danger_frame, foreground="#777777", wraplength=680, justify="left"), "unlike_hint").grid(
+            row=1, column=0, sticky="w", pady=(6, 0)
+        )
+
         log_frame = self._reg(ttk.LabelFrame(root, padding=12), "frame_status")
-        log_frame.grid(row=3, column=0, sticky="nsew", pady=8)
+        log_frame.grid(row=4, column=0, sticky="nsew", pady=8)
         log_frame.rowconfigure(0, weight=1)
         log_frame.columnconfigure(0, weight=1)
         self.log = tk.Text(log_frame, height=12, wrap="word")
@@ -211,7 +224,7 @@ class TweetDownApp(tk.Tk):
         self.log.configure(yscrollcommand=scroll.set)
 
         action_frame = ttk.Frame(root)
-        action_frame.grid(row=4, column=0, sticky="ew", pady=(8, 0))
+        action_frame.grid(row=5, column=0, sticky="ew", pady=(8, 0))
         action_frame.columnconfigure(0, weight=1)
         ttk.Label(action_frame, textvariable=self.status_var).grid(row=0, column=0, sticky="w")
         self.start_button = self._reg(ttk.Button(action_frame, command=self._start_export), "btn_start")
@@ -400,6 +413,56 @@ class TweetDownApp(tk.Tk):
         self.stop_requested = True
         self._append_log(t("log_stop_requested"))
 
+    def _unlike_all(self) -> None:
+        if self.worker and self.worker.is_alive():
+            messagebox.showinfo(t("dlg_busy_title"), t("dlg_busy_already"))
+            return
+        if not self.auth:
+            try:
+                self.auth = from_manual(
+                    self.auth_token_var.get(),
+                    self.ct0_var.get(),
+                    self.user_id_var.get(),
+                )
+            except AuthError:
+                messagebox.showwarning(t("dlg_session_needed_title"), t("dlg_session_needed_msg"))
+                return
+
+        word = t("unlike_confirm_word")
+        answer = simpledialog.askstring(
+            t("unlike_confirm_title"), t("unlike_confirm_msg", word=word), parent=self
+        )
+        if answer is None or answer.strip() != word:
+            self._append_log(t("unlike_cancelled"))
+            return
+
+        self.stop_requested = False
+        self.start_button.configure(state=tk.DISABLED)
+        self.stop_button.configure(state=tk.NORMAL)
+        self._append_log(t("unlike_start"))
+
+        def progress(message: str) -> None:
+            self.events.put(("log", message))
+
+        def should_stop() -> bool:
+            return self.stop_requested
+
+        def job() -> None:
+            try:
+                result = unlike_all(
+                    auth=self.auth,
+                    page_delay=1.0,
+                    action_delay=1.0,
+                    progress=progress,
+                    should_stop=should_stop,
+                )
+                self.events.put(("unlike_done", result))
+            except Exception as exc:
+                self.events.put(("error", exc))
+
+        self.worker = threading.Thread(target=job, daemon=True)
+        self.worker.start()
+
     def _drain_events(self) -> None:
         while True:
             try:
@@ -422,6 +485,12 @@ class TweetDownApp(tk.Tk):
                     message = t("msg_partial", count=count)
                     self._append_log(message)
                     messagebox.showinfo(t("dlg_partial_title"), message)
+            elif kind == "unlike_done":
+                self.start_button.configure(state=tk.NORMAL)
+                self.stop_button.configure(state=tk.DISABLED)
+                removed = payload.get("unliked", 0)
+                self._append_log(t("unlike_done", n=removed))
+                messagebox.showinfo(t("dlg_done_title"), t("unlike_done", n=removed))
             elif kind == "error":
                 self.start_button.configure(state=tk.NORMAL)
                 self.stop_button.configure(state=tk.DISABLED)

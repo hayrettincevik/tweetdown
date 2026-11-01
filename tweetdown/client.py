@@ -469,6 +469,108 @@ def export_likes(**kwargs: Any) -> dict[str, Any]:
     return asyncio.run(export_likes_async(**kwargs))
 
 
+async def _unlike_one(client: Any, auth: AuthBundle, query_id: str, tweet_id: str) -> Any:
+    url = f"{API_BASE_URL}/{query_id}/UnfavoriteTweet"
+    headers = {**_headers(auth), "content-type": "application/json"}
+    body = {"variables": {"tweet_id": str(tweet_id)}, "queryId": query_id}
+    return await client.post(url, headers=headers, content=json.dumps(body, separators=(",", ":")))
+
+
+async def unlike_all_async(
+    *,
+    auth: AuthBundle,
+    page_delay: float = 1.0,
+    action_delay: float = 1.0,
+    max_actions: int | None = None,
+    progress: ProgressCallback | None = None,
+    should_stop: StopCallback | None = None,
+) -> dict[str, Any]:
+    """Remove every like from the account by draining the Likes timeline.
+
+    This is irreversible. It repeatedly reads the top of the Likes timeline and
+    unlikes each post until the timeline is empty, so it naturally resumes if
+    stopped or rate-limited — just run it again.
+    """
+    try:
+        import httpx
+    except ImportError as exc:
+        raise XRequestError(t("cl_err_httpx")) from exc
+
+    def log(message: str) -> None:
+        if progress:
+            progress(message)
+
+    query_ids = load_query_ids()
+    wanted = ("Likes", "UnfavoriteTweet")
+    if any(op not in query_ids for op in wanted):
+        log(t("cl_discover_qid"))
+        query_ids.update(await refresh_query_ids(wanted))
+    likes_qid = query_ids["Likes"]
+    unfav_qid = query_ids["UnfavoriteTweet"]
+
+    attempted: set[str] = set()
+    extra_vars: dict[str, Any] = {}
+    removed = 0
+    finished = False
+    stall = 0
+    log(t("unlike_start"))
+
+    async with httpx.AsyncClient(follow_redirects=True, timeout=30.0) as client:
+        while True:
+            if should_stop and should_stop():
+                raise ExportStopped(t("cl_stopped"))
+            if max_actions is not None and removed >= max_actions:
+                break
+
+            try:
+                _resp, _payload, tweets, _cursor = await _fetch_page(
+                    client, auth, likes_qid, None, 50, extra_vars
+                )
+            except MissingVariablesError as exc:
+                if all(name in extra_vars for name in exc.names):
+                    raise
+                for name in exc.names:
+                    extra_vars[name] = False
+                continue
+
+            if not tweets:
+                finished = True
+                break
+            new_ids = [t.tweet_id for t in tweets if t.tweet_id not in attempted]
+            if not new_ids:
+                # Likely eventual-consistency lag: wait briefly, then give up.
+                stall += 1
+                if stall >= 3:
+                    finished = True
+                    break
+                await asyncio.sleep(page_delay)
+                continue
+            stall = 0
+
+            for tweet_id in new_ids:
+                if should_stop and should_stop():
+                    raise ExportStopped(t("cl_stopped"))
+                if max_actions is not None and removed >= max_actions:
+                    break
+                attempted.add(tweet_id)
+                response = await _unlike_one(client, auth, unfav_qid, tweet_id)
+                if response.status_code == 429:
+                    raise XRequestError(t("unlike_ratelimit", n=removed))
+                if response.status_code in (401, 403):
+                    raise XRequestError(t("cl_err_rejected"))
+                if response.status_code < 400:
+                    removed += 1
+                    log(t("unlike_progress", n=removed))
+                await asyncio.sleep(action_delay)
+            await asyncio.sleep(page_delay)
+
+    return {"unliked": removed, "complete": finished}
+
+
+def unlike_all(**kwargs: Any) -> dict[str, Any]:
+    return asyncio.run(unlike_all_async(**kwargs))
+
+
 def default_output_path() -> Path:
     stamp = time.strftime("%Y%m%d_%H%M%S")
     return BASE_DIR.resolve() / f"x_likes_{stamp}.json"

@@ -145,6 +145,27 @@ STRINGS: dict[str, dict[str, str]] = {
         "en": "No JSON found to view. Download your likes first, or choose a valid file in 'JSON file'.",
         "tr": "Görüntülenecek bir JSON bulunamadı. Önce beğenileri indirin ya da 'JSON dosyası' alanında geçerli bir dosya seçin.",
     },
+    # ---- GUI: danger zone (unlike all) ----
+    "frame_danger": {"en": "Danger zone", "tr": "Tehlikeli bölge"},
+    "btn_unlike_all": {"en": "⚠ Unlike all likes on the account", "tr": "⚠ Hesaptaki tüm beğenileri kaldır"},
+    "unlike_hint": {
+        "en": "Permanently removes your likes on X. The exported JSON is your only record afterwards — export first.",
+        "tr": "X'teki beğenilerinizi kalıcı olarak kaldırır. Sonrasında elinizdeki tek kayıt dışa aktardığınız JSON olur — önce dışa aktarın.",
+    },
+    "unlike_confirm_title": {"en": "Remove all likes?", "tr": "Tüm beğeniler kaldırılsın mı?"},
+    "unlike_confirm_msg": {
+        "en": "This will UNLIKE every post on your X account. This action CANNOT be undone.\n\nType {word} to confirm:",
+        "tr": "Bu işlem X hesabınızdaki BÜTÜN beğenileri kaldıracaktır. Bu işlem GERİ ALINAMAZ.\n\nOnaylamak için {word} yazın:",
+    },
+    "unlike_confirm_word": {"en": "UNLIKE", "tr": "KALDIR"},
+    "unlike_cancelled": {"en": "Operation cancelled.", "tr": "İşlem iptal edildi."},
+    "unlike_start": {"en": "Removing likes... (this can take a while)", "tr": "Beğeniler kaldırılıyor... (biraz sürebilir)"},
+    "unlike_progress": {"en": "{n} likes removed...", "tr": "{n} beğeni kaldırıldı..."},
+    "unlike_done": {"en": "Done. {n} likes removed from the account.", "tr": "Tamamlandı. Hesaptan {n} beğeni kaldırıldı."},
+    "unlike_ratelimit": {
+        "en": "X rate limit reached after {n} removals. Run again later to continue.",
+        "tr": "{n} kaldırmadan sonra X hız sınırına ulaşıldı. Devam etmek için daha sonra tekrar çalıştırın.",
+    },
     # ---- webview login window ----
     "webview_window_title": {"en": "TweetDown — Log in to X", "tr": "TweetDown — X'te Oturum Aç"},
     # ---- backend: client.py ----
